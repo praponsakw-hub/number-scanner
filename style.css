@@ -1,0 +1,68 @@
+body {
+  font-family: 'Prompt', 'Inter', sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* เส้นเลเซอร์วิ่งขึ้นลงภายในกรอบเล็ง 1 บรรทัด */
+@keyframes scanLine {
+  0% { top: 12%; opacity: 0.35; }
+  50% { top: 88%; opacity: 1; }
+  100% { top: 12%; opacity: 0.35; }
+}
+
+.animate-scan {
+  animation: scanLine 1.8s ease-in-out infinite;
+}
+
+/* มุมกรอบเล็ง ROI */
+.corner-bracket {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: #10b981;
+  border-style: solid;
+}
+
+.corner-tl {
+  top: -2px;
+  left: -2px;
+  border-width: 3px 0 0 3px;
+  border-top-left-radius: 6px;
+}
+
+.corner-tr {
+  top: -2px;
+  right: -2px;
+  border-width: 3px 3px 0 0;
+  border-top-right-radius: 6px;
+}
+
+.corner-bl {
+  bottom: -2px;
+  left: -2px;
+  border-width: 0 0 3px 3px;
+  border-bottom-left-radius: 6px;
+}
+
+.corner-br {
+  bottom: -2px;
+  right: -2px;
+  border-width: 0 3px 3px 0;
+  border-bottom-right-radius: 6px;
+}
+
+/* Scrollbar ของรายการประวัติ */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
