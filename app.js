@@ -83,6 +83,8 @@ const state = {
 const STORAGE_RECORDS = 'kwh_simple_photo_records_v1';
 const STORAGE_WEBHOOK = 'kwh_simple_webhook_v1';
 const STORAGE_METER = 'kwh_simple_meter_v1';
+const DEFAULT_METER = 'SWG-F07-DPM75';
+const DEFAULT_WEBHOOK = 'https://script.google.com/macros/s/วางรหัส_DEPLOYMENT_ของคุณตรงนี้/exec';
 
 let records = [];
 try {
@@ -90,14 +92,18 @@ try {
   if (Array.isArray(raw)) records = raw;
 } catch (_) {}
 
-const savedUrl = localStorage.getItem(STORAGE_WEBHOOK) || '';
-if (savedUrl) {
-  sheetWebhookUrl.value = savedUrl;
+const resolvedWebhook = (DEFAULT_WEBHOOK && !DEFAULT_WEBHOOK.includes('วางรหัส_DEPLOYMENT_ของคุณตรงนี้'))
+  ? DEFAULT_WEBHOOK.trim()
+  : (localStorage.getItem(STORAGE_WEBHOOK) || '').trim();
+
+if (resolvedWebhook) {
+  sheetWebhookUrl.value = resolvedWebhook;
+  localStorage.setItem(STORAGE_WEBHOOK, resolvedWebhook);
   sheetStatusText.textContent = 'พร้อมส่งเข้าชีต';
   sheetStatusText.className = 'text-[11px] text-emerald-600 font-medium';
 }
 
-const savedMeter = localStorage.getItem(STORAGE_METER);
+const savedMeter = localStorage.getItem(STORAGE_METER) || DEFAULT_METER;
 if (savedMeter) {
   const hasOption = Array.from(meterPointSelect.options).some(o => o.value === savedMeter);
   if (hasOption && savedMeter !== 'CUSTOM') {
@@ -141,9 +147,9 @@ function getDateTime() {
 function getMeterCode() {
   if (meterPointSelect.value === 'CUSTOM') {
     const clean = customMeterInput.value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-    return clean || 'M01';
+    return clean || DEFAULT_METER;
   }
-  return meterPointSelect.value || 'M01';
+  return meterPointSelect.value || DEFAULT_METER;
 }
 
 function buildPhotoName(meter, date, time) {
@@ -163,7 +169,6 @@ function toNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-// ตรวจสอบคุณภาพข้อมูลก่อนบันทึกเทียบกับค่ารอบก่อนหน้าของมิเตอร์เดียวกัน
 function evaluateDataQuality(meter, v1Str, v2Str) {
   const v1 = v1Str.trim();
   const v2 = v2Str.trim();
@@ -177,7 +182,7 @@ function evaluateDataQuality(meter, v1Str, v2Str) {
     return { status: 'รูปแบบตัวเลขผิดปกติ', level: 'error', delta1: null };
   }
 
-  const prevRec = records.find(r => (r.meter || 'M01') === meter && toNum(r.value1) !== null);
+  const prevRec = records.find(r => (r.meter || DEFAULT_METER) === meter && toNum(r.value1) !== null);
   const prev1 = prevRec ? toNum(prevRec.value1) : null;
   const delta1 = (n1 !== null && prev1 !== null) ? Number((n1 - prev1).toFixed(2)) : null;
 
@@ -240,13 +245,13 @@ function selectSlot(slot) {
     : 'px-3 py-1 rounded-lg text-xs font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 transition';
 
   slot1Card.className = is1
-    ? 'p-3 rounded-xl border-2 border-emerald-500 bg-emerald-50/40 transition space-y-2'
-    : 'p-3 rounded-xl border-2 border-slate-200 bg-slate-50/60 transition space-y-2';
+    ? 'p-3 rounded-xl border-2 border-emerald-500 bg-emerald-50/40 transition space-y-2 min-w-0'
+    : 'p-3 rounded-xl border-2 border-slate-200 bg-slate-50/60 transition space-y-2 min-w-0';
   slot2Card.className = !is1
-    ? 'p-3 rounded-xl border-2 border-emerald-500 bg-emerald-50/40 transition space-y-2'
-    : 'p-3 rounded-xl border-2 border-slate-200 bg-slate-50/60 transition space-y-2';
+    ? 'p-3 rounded-xl border-2 border-emerald-500 bg-emerald-50/40 transition space-y-2 min-w-0'
+    : 'p-3 rounded-xl border-2 border-slate-200 bg-slate-50/60 transition space-y-2 min-w-0';
 
-  roiGuideText.textContent = `กำลังสแกนลง: ค่าที่ ${slot}`;
+  roiGuideText.textContent = `กำลังสแกนลง: ค่าสะสม T${slot}`;
 }
 
 function checkManualEdit(slot) {
@@ -744,9 +749,6 @@ clearAllBtn.addEventListener('click', () => {
 
 toggleCamBtn.addEventListener('click', toggleCamera);
 
-// =====================================
-// แดชบอร์ดคุณภาพข้อมูล & แนวโน้มอนุกรมเวลา
-// =====================================
 function setActiveTab(mode) {
   const isDash = mode === 'dash';
   scanView.classList.toggle('hidden', isDash);
@@ -789,7 +791,7 @@ async function loadDashboardRows(force = false) {
     return [...records].reverse().map(r => ({
       date: r.date,
       time: r.time,
-      meter: r.meter || 'M01',
+      meter: r.meter || DEFAULT_METER,
       value1: r.value1 || '',
       value2: r.value2 || '',
       editStatus: r.editStatus || 'ไม่แก้',
@@ -811,7 +813,7 @@ async function loadDashboardRows(force = false) {
       remoteRowsCache = data.rows.map(row => ({
         date: row[0] || '',
         time: row[1] || '',
-        meter: row[2] || 'M01',
+        meter: row[2] || DEFAULT_METER,
         value1: row[3] || '',
         value2: row[4] || '',
         editStatus: row[5] || 'ไม่แก้',
@@ -827,7 +829,7 @@ async function loadDashboardRows(force = false) {
   return [...records].reverse().map(r => ({
     date: r.date,
     time: r.time,
-    meter: r.meter || 'M01',
+    meter: r.meter || DEFAULT_METER,
     value1: r.value1 || '',
     value2: r.value2 || '',
     editStatus: r.editStatus || 'ไม่แก้',
@@ -838,14 +840,14 @@ async function loadDashboardRows(force = false) {
 
 async function renderDashboard(force = false) {
   const allRows = await loadDashboardRows(force);
-  const meters = Array.from(new Set(allRows.map(r => r.meter || 'M01')));
+  const meters = Array.from(new Set(allRows.map(r => r.meter || DEFAULT_METER)));
   const prevChoice = dashMeterSelect.value || 'ALL';
   dashMeterSelect.innerHTML = '<option value="ALL">ทุกจุดตรวจ</option>' +
     meters.map(m => `<option value="${m}">${m}</option>`).join('');
   if (meters.includes(prevChoice)) dashMeterSelect.value = prevChoice;
 
   const chosen = dashMeterSelect.value;
-  const filtered = chosen === 'ALL' ? allRows : allRows.filter(r => (r.meter || 'M01') === chosen);
+  const filtered = chosen === 'ALL' ? allRows : allRows.filter(r => (r.meter || DEFAULT_METER) === chosen);
 
   const lastByMeter = {};
   let anomalyCount = 0;
@@ -854,7 +856,7 @@ async function renderDashboard(force = false) {
   let cleanNormalCount = 0;
 
   const computed = filtered.map(r => {
-    const m = r.meter || 'M01';
+    const m = r.meter || DEFAULT_METER;
     const n1 = toNum(r.value1);
     const prev1 = lastByMeter[m];
     const delta1 = (n1 !== null && prev1 !== null && prev1 !== undefined)
@@ -911,7 +913,7 @@ async function renderDashboard(force = false) {
       return `
         <tr>
           <td class="py-2 pr-2 font-mono whitespace-nowrap">${r.date || ''} ${r.time || ''}</td>
-          <td class="py-2 px-2 font-bold">${r.meter || 'M01'}</td>
+          <td class="py-2 px-2 font-bold">${r.meter || DEFAULT_METER}</td>
           <td class="py-2 px-2 font-mono">${r.value1 || '-'}</td>
           <td class="py-2 px-2 font-mono ${dCls}">${dStr}</td>
           <td class="py-2 px-2 font-mono">${r.value2 || '-'}</td>
@@ -948,7 +950,7 @@ async function renderDashboard(force = false) {
       deltaChart = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: seriesRows.map(r => `${r.meter || 'M01'} ${r.time || ''}`),
+          labels: seriesRows.map(r => `${r.meter || DEFAULT_METER} ${r.time || ''}`),
           datasets: [
             {
               label: 'Δ ค่าที่ 1 (kWh)',
