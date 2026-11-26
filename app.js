@@ -33,6 +33,7 @@ const clearSlot1Btn = document.getElementById('clearSlot1Btn');
 const clearSlot2Btn = document.getElementById('clearSlot2Btn');
 const slot1EditTag = document.getElementById('slot1EditTag');
 const slot2EditTag = document.getElementById('slot2EditTag');
+const liveQualityBadge = document.getElementById('liveQualityBadge');
 const saveBtn = document.getElementById('saveBtn');
 const resetSlotsBtn = document.getElementById('resetSlotsBtn');
 
@@ -46,6 +47,20 @@ const itemCount = document.getElementById('itemCount');
 const exportCsvBtn = document.getElementById('exportCsvBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 
+const tabScanBtn = document.getElementById('tabScanBtn');
+const tabDashBtn = document.getElementById('tabDashBtn');
+const scanView = document.getElementById('scanView');
+const dashView = document.getElementById('dashView');
+const dashSourceLabel = document.getElementById('dashSourceLabel');
+const dashMeterSelect = document.getElementById('dashMeterSelect');
+const refreshDashBtn = document.getElementById('refreshDashBtn');
+const statTotal = document.getElementById('statTotal');
+const statNoEdit = document.getElementById('statNoEdit');
+const statAvgDelta = document.getElementById('statAvgDelta');
+const statAnomaly = document.getElementById('statAnomaly');
+const trendDirectionBadge = document.getElementById('trendDirectionBadge');
+const dashTableBody = document.getElementById('dashTableBody');
+
 let mediaStream = null;
 let isCameraActive = false;
 let ocrWorker = null;
@@ -53,6 +68,9 @@ let isOcrReady = false;
 let isProcessingFrame = false;
 let scanTimer = null;
 let latestStillDataUrl = '';
+let deltaChart = null;
+let qualityChart = null;
+let remoteRowsCache = null;
 
 const state = {
   activeSlot: 1,
@@ -138,6 +156,50 @@ function updateFileNamePreview() {
   fileNamePreview.textContent = buildPhotoName(getMeterCode(), dt.date, dt.time);
 }
 
+function toNum(v) {
+  const s = String(v || '').replace(/,/g, '').trim();
+  if (!s || !/^\d+(\.\d+)?$/.test(s)) return null;
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+// ตรวจสอบคุณภาพข้อมูลก่อนบันทึกเทียบกับค่ารอบก่อนหน้าของมิเตอร์เดียวกัน
+function evaluateDataQuality(meter, v1Str, v2Str) {
+  const v1 = v1Str.trim();
+  const v2 = v2Str.trim();
+  if (!v1 && !v2) {
+    return { status: 'ค่าว่าง', level: 'warn', delta1: null };
+  }
+
+  const n1 = v1 ? toNum(v1) : null;
+  const n2 = v2 ? toNum(v2) : null;
+  if ((v1 && n1 === null) || (v2 && n2 === null)) {
+    return { status: 'รูปแบบตัวเลขผิดปกติ', level: 'error', delta1: null };
+  }
+
+  const prevRec = records.find(r => (r.meter || 'M01') === meter && toNum(r.value1) !== null);
+  const prev1 = prevRec ? toNum(prevRec.value1) : null;
+  const delta1 = (n1 !== null && prev1 !== null) ? Number((n1 - prev1).toFixed(2)) : null;
+
+  if (delta1 !== null && delta1 < 0) {
+    return { status: `ค่าลดลงผิดปกติ (${delta1})`, level: 'error', delta1 };
+  }
+
+  return { status: 'ปกติ (ผ่านเกณฑ์)', level: 'ok', delta1 };
+}
+
+function refreshLiveQuality() {
+  const res = evaluateDataQuality(getMeterCode(), valueSlot1.value, valueSlot2.value);
+  liveQualityBadge.textContent = res.status;
+  if (!valueSlot1.value.trim() && !valueSlot2.value.trim()) {
+    liveQualityBadge.className = 'px-2 py-0.5 rounded-md font-semibold bg-slate-200 text-slate-700';
+  } else if (res.level === 'error') {
+    liveQualityBadge.className = 'px-2 py-0.5 rounded-md font-semibold bg-rose-100 text-rose-700';
+  } else {
+    liveQualityBadge.className = 'px-2 py-0.5 rounded-md font-semibold bg-emerald-100 text-emerald-700';
+  }
+}
+
 meterPointSelect.addEventListener('change', () => {
   if (meterPointSelect.value === 'CUSTOM') {
     customMeterInput.classList.remove('hidden');
@@ -147,11 +209,13 @@ meterPointSelect.addEventListener('change', () => {
     localStorage.setItem(STORAGE_METER, meterPointSelect.value);
   }
   updateFileNamePreview();
+  refreshLiveQuality();
 });
 
 customMeterInput.addEventListener('input', () => {
   localStorage.setItem(STORAGE_METER, getMeterCode());
   updateFileNamePreview();
+  refreshLiveQuality();
 });
 
 function updateClock() {
@@ -198,6 +262,7 @@ function checkManualEdit(slot) {
     tag.textContent = 'ยังไม่แก้';
     tag.className = 'text-[11px] font-medium text-slate-400';
   }
+  refreshLiveQuality();
 }
 
 valueSlot1.addEventListener('input', () => checkManualEdit(1));
@@ -211,6 +276,7 @@ clearSlot1Btn.addEventListener('click', () => {
   state.wasManuallyEdited[1] = false;
   slot1EditTag.textContent = 'ยังไม่แก้';
   slot1EditTag.className = 'text-[11px] font-medium text-slate-400';
+  refreshLiveQuality();
 });
 
 clearSlot2Btn.addEventListener('click', () => {
@@ -219,6 +285,7 @@ clearSlot2Btn.addEventListener('click', () => {
   state.wasManuallyEdited[2] = false;
   slot2EditTag.textContent = 'ยังไม่แก้';
   slot2EditTag.className = 'text-[11px] font-medium text-slate-400';
+  refreshLiveQuality();
 });
 
 resetSlotsBtn.addEventListener('click', () => {
@@ -232,6 +299,7 @@ resetSlotsBtn.addEventListener('click', () => {
   slot2EditTag.className = 'text-[11px] font-medium text-slate-400';
   state.stabilityBuffer = [];
   stabilityText.textContent = `รอจับเลขสำหรับ "ค่าที่ ${state.activeSlot}" (0/${state.requiredMatches})`;
+  refreshLiveQuality();
   showToast('ล้าง 2 ช่องแล้ว', '🧹');
 });
 
@@ -388,6 +456,7 @@ function setSlotValue(slot, val) {
   const input = slot === 1 ? valueSlot1 : valueSlot2;
   input.value = val;
   state.lastOcrValue[slot] = val;
+  refreshLiveQuality();
 }
 
 async function runOcr(singleShot = false) {
@@ -511,6 +580,7 @@ function saveRecordsLocal() {
 saveWebhookBtn.addEventListener('click', () => {
   const url = sheetWebhookUrl.value.trim();
   localStorage.setItem(STORAGE_WEBHOOK, url);
+  remoteRowsCache = null;
   if (url) {
     sheetStatusText.textContent = 'พร้อมส่งเข้าชีต';
     sheetStatusText.className = 'text-[11px] text-emerald-600 font-medium';
@@ -541,6 +611,7 @@ saveBtn.addEventListener('click', async () => {
 
   const dt = getDateTime();
   const meter = getMeterCode();
+  const qRes = evaluateDataQuality(meter, v1, v2);
   const photo = capturePhoto(480, 0.55);
   const photoName = buildPhotoName(meter, dt.date, dt.time);
 
@@ -552,13 +623,16 @@ saveBtn.addEventListener('click', async () => {
     value1: v1,
     value2: v2,
     editStatus: getEditStatus(),
+    qualityStatus: qRes.status,
     photoName: photo ? photoName : 'ไม่มีรูป',
     photoPreview: photo ? photo.dataUrl : ''
   };
 
   records.unshift(item);
+  remoteRowsCache = null;
   saveRecordsLocal();
   renderList();
+  refreshLiveQuality();
 
   const url = (localStorage.getItem(STORAGE_WEBHOOK) || '').trim();
   if (url) {
@@ -574,6 +648,7 @@ saveBtn.addEventListener('click', async () => {
           value1: item.value1,
           value2: item.value2,
           editStatus: item.editStatus,
+          qualityStatus: item.qualityStatus,
           photoName: photo ? photoName : 'ไม่มีรูป',
           photoBase64: photo ? photo.base64 : '',
           photoMimeType: photo ? photo.mimeType : 'image/jpeg'
@@ -582,13 +657,14 @@ saveBtn.addEventListener('click', async () => {
     } catch (_) {}
   }
 
-  showToast(`บันทึก [${item.meter}] + รูปเรียบร้อย`, '📝');
+  showToast(`บันทึก [${item.meter}] (${item.qualityStatus})`, qRes.level === 'error' ? '⚠️' : '📝');
 });
 
 function removeItem(id) {
   records = records.filter(r => r.id !== id);
   saveRecordsLocal();
   renderList();
+  refreshLiveQuality();
 }
 window.removeItem = removeItem;
 
@@ -611,6 +687,11 @@ function renderList() {
       ? `<img src="${r.photoPreview}" alt="รูปมิเตอร์" class="w-16 h-12 object-cover rounded-lg border border-slate-300 shrink-0 bg-slate-200" />`
       : `<div class="w-16 h-12 rounded-lg border border-dashed border-slate-300 flex items-center justify-center text-[10px] text-slate-400 shrink-0">ไม่มีรูป</div>`;
 
+    const qStatus = r.qualityStatus || 'ปกติ (ผ่านเกณฑ์)';
+    const qBadgeCls = qStatus.includes('ผิดปกติ')
+      ? 'bg-rose-100 text-rose-700'
+      : 'bg-emerald-100 text-emerald-700';
+
     li.innerHTML = `
       <div class="flex items-start gap-2.5 min-w-0">
         ${thumb}
@@ -620,6 +701,7 @@ function renderList() {
             <span class="font-semibold text-slate-700">${r.date}</span>
             <span class="text-slate-500 font-mono">${r.time}</span>
             <span class="px-1.5 py-0.5 rounded ${r.editStatus === 'ไม่แก้' ? 'bg-slate-200 text-slate-600' : 'bg-amber-100 text-amber-800'}">${r.editStatus}</span>
+            <span class="px-1.5 py-0.5 rounded font-semibold ${qBadgeCls}">${qStatus}</span>
           </div>
           <div class="text-xs sm:text-sm font-bold font-mono flex flex-wrap gap-x-3">
             <span>ค่าที่ 1: <span class="text-emerald-700">${r.value1 || '-'}</span></span>
@@ -639,9 +721,9 @@ exportCsvBtn.addEventListener('click', () => {
     showToast('ไม่มีข้อมูลสำหรับส่งออก CSV', '⚠️');
     return;
   }
-  let csv = '\uFEFFวันที่,เวลา,จุดตรวจ,ค่าที่ 1,ค่าที่ 2,สถานะการแก้ค่า,ชื่อไฟล์รูป\n';
+  let csv = '\uFEFFวันที่,เวลา,จุดตรวจ,ค่าที่ 1,ค่าที่ 2,สถานะการแก้ค่า,คุณภาพข้อมูล,ชื่อไฟล์รูป\n';
   [...records].reverse().forEach(r => {
-    csv += `"${r.date}","${r.time}","${r.meter}","${r.value1}","${r.value2}","${r.editStatus}","${r.photoName || ''}"\n`;
+    csv += `"${r.date}","${r.time}","${r.meter}","${r.value1}","${r.value2}","${r.editStatus}","${r.qualityStatus || 'ปกติ'}","${r.photoName || ''}"\n`;
   });
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
@@ -656,12 +738,278 @@ clearAllBtn.addEventListener('click', () => {
   records = [];
   localStorage.setItem(STORAGE_RECORDS, '[]');
   renderList();
+  refreshLiveQuality();
   showToast('ล้างทั้งหมดแล้ว', '🧹');
 });
 
 toggleCamBtn.addEventListener('click', toggleCamera);
 
+// =====================================
+// แดชบอร์ดคุณภาพข้อมูล & แนวโน้มอนุกรมเวลา
+// =====================================
+function setActiveTab(mode) {
+  const isDash = mode === 'dash';
+  scanView.classList.toggle('hidden', isDash);
+  dashView.classList.toggle('hidden', !isDash);
+
+  tabScanBtn.className = !isDash
+    ? 'py-2 px-3 rounded-lg text-xs font-bold bg-white text-emerald-700 shadow-sm transition'
+    : 'py-2 px-3 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition';
+  tabDashBtn.className = isDash
+    ? 'py-2 px-3 rounded-lg text-xs font-bold bg-white text-emerald-700 shadow-sm transition'
+    : 'py-2 px-3 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition';
+
+  if (isDash) renderDashboard(false);
+}
+
+tabScanBtn.addEventListener('click', () => setActiveTab('scan'));
+tabDashBtn.addEventListener('click', () => setActiveTab('dash'));
+
+function computeLinearTrend(values) {
+  const n = values.length;
+  if (n < 2) return { line: values.slice(), slope: 0 };
+  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += values[i];
+    sumXY += i * values[i];
+    sumXX += i * i;
+  }
+  const denom = n * sumXX - sumX * sumX;
+  const slope = denom === 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / n;
+  const line = values.map((_, i) => Number((intercept + slope * i).toFixed(2)));
+  return { line, slope };
+}
+
+async function loadDashboardRows(force = false) {
+  const url = (localStorage.getItem(STORAGE_WEBHOOK) || '').trim();
+  if (!url) {
+    dashSourceLabel.textContent = 'แสดงข้อมูลในเครื่องนี้ (ยังไม่ได้ตั้งค่าลิงก์ Google Apps Script)';
+    return [...records].reverse().map(r => ({
+      date: r.date,
+      time: r.time,
+      meter: r.meter || 'M01',
+      value1: r.value1 || '',
+      value2: r.value2 || '',
+      editStatus: r.editStatus || 'ไม่แก้',
+      qualityStatus: r.qualityStatus || 'ปกติ',
+      photoUrl: ''
+    }));
+  }
+
+  if (remoteRowsCache && !force) {
+    dashSourceLabel.textContent = `ข้อมูลจาก Google Sheets (${remoteRowsCache.length} รายการ)`;
+    return remoteRowsCache;
+  }
+
+  try {
+    dashSourceLabel.textContent = 'กำลังดึงข้อมูลจาก Google Sheets...';
+    const res = await fetch(url, { method: 'GET' });
+    const data = await res.json();
+    if (data && data.status === 'ok' && Array.isArray(data.rows)) {
+      remoteRowsCache = data.rows.map(row => ({
+        date: row[0] || '',
+        time: row[1] || '',
+        meter: row[2] || 'M01',
+        value1: row[3] || '',
+        value2: row[4] || '',
+        editStatus: row[5] || 'ไม่แก้',
+        photoUrl: (row[7] && String(row[7]).startsWith('http')) ? row[7] : ''
+      }));
+      dashSourceLabel.textContent = `อัปเดตจาก Google Sheets แล้ว (${remoteRowsCache.length} รายการ)`;
+      return remoteRowsCache;
+    }
+  } catch (_) {
+    dashSourceLabel.textContent = 'ดึงชีตไม่ได้ชั่วคราว แสดงข้อมูลในเครื่องแทน';
+  }
+
+  return [...records].reverse().map(r => ({
+    date: r.date,
+    time: r.time,
+    meter: r.meter || 'M01',
+    value1: r.value1 || '',
+    value2: r.value2 || '',
+    editStatus: r.editStatus || 'ไม่แก้',
+    qualityStatus: r.qualityStatus || 'ปกติ',
+    photoUrl: ''
+  }));
+}
+
+async function renderDashboard(force = false) {
+  const allRows = await loadDashboardRows(force);
+  const meters = Array.from(new Set(allRows.map(r => r.meter || 'M01')));
+  const prevChoice = dashMeterSelect.value || 'ALL';
+  dashMeterSelect.innerHTML = '<option value="ALL">ทุกจุดตรวจ</option>' +
+    meters.map(m => `<option value="${m}">${m}</option>`).join('');
+  if (meters.includes(prevChoice)) dashMeterSelect.value = prevChoice;
+
+  const chosen = dashMeterSelect.value;
+  const filtered = chosen === 'ALL' ? allRows : allRows.filter(r => (r.meter || 'M01') === chosen);
+
+  const lastByMeter = {};
+  let anomalyCount = 0;
+  let editedCount = 0;
+  let noEditCount = 0;
+  let cleanNormalCount = 0;
+
+  const computed = filtered.map(r => {
+    const m = r.meter || 'M01';
+    const n1 = toNum(r.value1);
+    const prev1 = lastByMeter[m];
+    const delta1 = (n1 !== null && prev1 !== null && prev1 !== undefined)
+      ? Number((n1 - prev1).toFixed(2))
+      : null;
+    if (n1 !== null) lastByMeter[m] = n1;
+
+    const isInvalidFormat = Boolean(r.value1 && n1 === null);
+    const isDrop = delta1 !== null && delta1 < 0;
+    const isEdited = r.editStatus && r.editStatus !== 'ไม่แก้';
+
+    let computedQuality = 'ปกติ';
+    if (isDrop) {
+      computedQuality = 'ค่าลดลงผิดปกติ';
+      anomalyCount += 1;
+    } else if (isInvalidFormat) {
+      computedQuality = 'รูปแบบผิดปกติ';
+      anomalyCount += 1;
+    } else if (isEdited) {
+      computedQuality = 'แก้ไขด้วยมือ';
+    } else {
+      cleanNormalCount += 1;
+    }
+
+    if (isEdited) editedCount += 1;
+    else noEditCount += 1;
+
+    return { ...r, delta1, computedQuality };
+  });
+
+  const validDeltas = computed.filter(r => r.delta1 !== null && r.delta1 >= 0).map(r => r.delta1);
+  const avgDelta = validDeltas.length > 0
+    ? (validDeltas.reduce((a, b) => a + b, 0) / validDeltas.length)
+    : 0;
+
+  statTotal.textContent = String(computed.length);
+  statNoEdit.textContent = computed.length > 0 ? `${Math.round((noEditCount / computed.length) * 100)}%` : '0%';
+  statAvgDelta.textContent = avgDelta.toFixed(2);
+  statAnomaly.textContent = String(anomalyCount);
+
+  const recentRows = [...computed].reverse().slice(0, 25);
+  if (!recentRows.length) {
+    dashTableBody.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-slate-400">ยังไม่มีข้อมูล</td></tr>';
+  } else {
+    dashTableBody.innerHTML = recentRows.map(r => {
+      const dStr = r.delta1 === null ? '-' : (r.delta1 >= 0 ? `+${r.delta1}` : `${r.delta1}`);
+      const dCls = r.delta1 === null ? 'text-slate-400' : (r.delta1 < 0 ? 'text-rose-600 font-bold' : 'text-emerald-700 font-bold');
+      const qCls = r.computedQuality.includes('ผิดปกติ')
+        ? 'bg-rose-100 text-rose-700'
+        : (r.computedQuality === 'แก้ไขด้วยมือ' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700');
+      const linkHtml = r.photoUrl
+        ? `<a href="${r.photoUrl}" target="_blank" rel="noopener" class="text-emerald-700 underline font-semibold">เปิด</a>`
+        : `<span class="text-slate-400">-</span>`;
+      return `
+        <tr>
+          <td class="py-2 pr-2 font-mono whitespace-nowrap">${r.date || ''} ${r.time || ''}</td>
+          <td class="py-2 px-2 font-bold">${r.meter || 'M01'}</td>
+          <td class="py-2 px-2 font-mono">${r.value1 || '-'}</td>
+          <td class="py-2 px-2 font-mono ${dCls}">${dStr}</td>
+          <td class="py-2 px-2 font-mono">${r.value2 || '-'}</td>
+          <td class="py-2 px-2"><span class="px-1.5 py-0.5 rounded font-semibold ${qCls}">${r.computedQuality}</span></td>
+          <td class="py-2 pl-2">${linkHtml}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  if (typeof Chart !== 'undefined') {
+    const seriesRows = computed.filter(r => r.delta1 !== null).slice(-20);
+    const deltaValues = seriesRows.map(r => r.delta1);
+    const { line: trendLine, slope } = computeLinearTrend(deltaValues);
+    const meanLine = deltaValues.map(() => Number(avgDelta.toFixed(2)));
+
+    if (deltaValues.length < 2) {
+      trendDirectionBadge.textContent = 'รอข้อมูลผลต่างอย่างน้อย 2 รอบ';
+      trendDirectionBadge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600';
+    } else if (slope > 0.05) {
+      trendDirectionBadge.textContent = `แนวโน้มเพิ่มขึ้น (+${slope.toFixed(2)} / รอบ)`;
+      trendDirectionBadge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800';
+    } else if (slope < -0.05) {
+      trendDirectionBadge.textContent = `แนวโน้มลดลง (${slope.toFixed(2)} / รอบ)`;
+      trendDirectionBadge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800';
+    } else {
+      trendDirectionBadge.textContent = `แนวโน้มทรงตัว (${slope.toFixed(2)} / รอบ)`;
+      trendDirectionBadge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800';
+    }
+
+    const ctx = document.getElementById('deltaChartCanvas');
+    if (ctx) {
+      if (deltaChart) deltaChart.destroy();
+      deltaChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: seriesRows.map(r => `${r.meter || 'M01'} ${r.time || ''}`),
+          datasets: [
+            {
+              label: 'Δ ค่าที่ 1 (kWh)',
+              data: deltaValues,
+              borderColor: '#059669',
+              backgroundColor: 'rgba(16, 185, 129, 0.14)',
+              tension: 0.25,
+              fill: true
+            },
+            {
+              label: 'เส้นแนวโน้ม (Linear Trend)',
+              data: trendLine,
+              borderColor: '#2563eb',
+              borderDash: [6, 4],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              label: 'ค่าเฉลี่ย (Mean)',
+              data: meanLine,
+              borderColor: '#f59e0b',
+              borderDash: [2, 3],
+              pointRadius: 0,
+              fill: false
+            }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+    }
+
+    const qCtx = document.getElementById('qualityChartCanvas');
+    if (qCtx) {
+      if (qualityChart) qualityChart.destroy();
+      qualityChart = new Chart(qCtx, {
+        type: 'bar',
+        data: {
+          labels: ['ผ่านเกณฑ์ปกติ (ไม่แก้)', 'แก้ไขด้วยมือ', 'พบความผิดปกติ (ลดลง/รูปแบบผิด)'],
+          datasets: [{
+            label: 'จำนวนรายการ',
+            data: [cleanNormalCount, editedCount, anomalyCount],
+            backgroundColor: ['#10b981', '#f59e0b', '#e11d48'],
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        }
+      });
+    }
+  }
+}
+
+dashMeterSelect.addEventListener('change', () => renderDashboard(false));
+refreshDashBtn.addEventListener('click', () => renderDashboard(true));
+
 updateClock();
 setInterval(updateClock, 1000);
 renderList();
+refreshLiveQuality();
 initOcr();
