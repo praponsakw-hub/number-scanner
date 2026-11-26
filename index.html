@@ -28,7 +28,7 @@
       </div>
       <div class="truncate">
         <h1 class="text-sm sm:text-base font-bold text-slate-800 leading-tight truncate">เก็บค่าหน่วยไฟจากหน้าจอมิเตอร์</h1>
-        <p class="text-[11px] text-emerald-600 font-medium truncate">สแกน/กรอกหน่วยไฟ 2 ค่า + แคปภาพหลักฐาน</p>
+        <p class="text-[11px] text-emerald-600 font-medium truncate">สแกนสด • ถ่ายภาพ • คลังรูป + บันทึกหลักฐาน</p>
       </div>
     </div>
 
@@ -72,14 +72,15 @@
       </div>
     </section>
 
-    <!-- กล้องและอัปโหลดรูป -->
+    <!-- กล้อง ถ่ายภาพ และเลือกจากคลังรูป -->
     <section class="bg-slate-900 rounded-2xl overflow-hidden shadow-md relative border border-slate-800">
       <div class="relative w-full aspect-[4/3] bg-slate-950 flex items-center justify-center overflow-hidden">
         <video id="video" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
+        <img id="capturedPreviewImg" alt="ภาพที่ถ่ายหรือเลือก" class="w-full h-full object-contain hidden bg-slate-950" />
 
         <div id="cameraPlaceholder" class="text-center p-6 space-y-2">
-          <p class="text-slate-300 text-sm font-medium">กด "เปิดกล้องสแกน" หรือ "อัปโหลดรูปทดสอบ"</p>
-          <p class="text-slate-400 text-xs">เล็งกรอบให้ตรงตัวเลขหน่วยไฟบนหน้าจอมิเตอร์</p>
+          <p class="text-slate-300 text-sm font-medium">เลือก "เปิดกล้องสแกน" "ถ่ายภาพ" หรือ "คลังรูป"</p>
+          <p class="text-slate-400 text-xs">สแกนสด ถ่ายภาพหน้าจอ หรือดึงรูปจากแกลเลอรีเครื่องได้ทันที</p>
         </div>
 
         <div id="roiOverlay" class="hidden absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
@@ -99,15 +100,18 @@
 
       <div id="cameraErrorBox" class="hidden bg-amber-950/90 border-t border-amber-700/50 px-4 py-3 text-xs text-amber-200 space-y-1">
         <p class="font-semibold text-amber-300">⚠️ เปิดกล้องไม่ได้</p>
-        <p id="cameraErrorDetail">ตรวจสอบสิทธิ์กล้องหรือเปิดผ่าน HTTPS หรือกด "อัปโหลดรูปทดสอบ" ด้านล่างครับ</p>
+        <p id="cameraErrorDetail">ตรวจสอบสิทธิ์กล้องหรือเปิดผ่าน HTTPS หรือกด "คลังรูป" ด้านล่างครับ</p>
       </div>
 
-      <div class="p-3 bg-slate-900 flex flex-wrap items-center gap-2">
-        <button id="toggleCamBtn" type="button" class="flex-1 min-w-[140px] py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition">
+      <div class="p-3 bg-slate-900 grid grid-cols-3 gap-2">
+        <button id="toggleCamBtn" type="button" class="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs sm:text-sm transition">
           เปิดกล้องสแกน
         </button>
-        <button id="uploadBtn" type="button" class="py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-sm transition border border-slate-700">
-          อัปโหลดรูปทดสอบ
+        <button id="snapPhotoBtn" type="button" class="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm transition">
+          ถ่ายภาพ
+        </button>
+        <button id="uploadBtn" type="button" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs sm:text-sm transition border border-slate-700">
+          คลังรูป
         </button>
         <input id="imageUpload" type="file" accept="image/*,.jpg,.jpeg,.png,.webp" class="hidden" />
       </div>
@@ -212,6 +216,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

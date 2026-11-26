@@ -1,9 +1,11 @@
 const video = document.getElementById('video');
+const capturedPreviewImg = document.getElementById('capturedPreviewImg');
 const cameraPlaceholder = document.getElementById('cameraPlaceholder');
 const roiOverlay = document.getElementById('roiOverlay');
 const roiBox = document.getElementById('roiBox');
 const roiGuideText = document.getElementById('roiGuideText');
 const toggleCamBtn = document.getElementById('toggleCamBtn');
+const snapPhotoBtn = document.getElementById('snapPhotoBtn');
 const cameraErrorBox = document.getElementById('cameraErrorBox');
 const cameraErrorDetail = document.getElementById('cameraErrorDetail');
 const uploadBtn = document.getElementById('uploadBtn');
@@ -50,6 +52,7 @@ let ocrWorker = null;
 let isOcrReady = false;
 let isProcessingFrame = false;
 let scanTimer = null;
+let latestStillDataUrl = '';
 
 const state = {
   activeSlot: 1,
@@ -275,10 +278,11 @@ async function toggleCamera() {
       video.srcObject = mediaStream;
       await video.play();
       isCameraActive = true;
+      capturedPreviewImg.classList.add('hidden');
       video.classList.remove('hidden');
       cameraPlaceholder.classList.add('hidden');
       roiOverlay.classList.remove('hidden');
-      toggleCamBtn.className = 'flex-1 min-w-[140px] py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm transition';
+      toggleCamBtn.className = 'py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs sm:text-sm transition';
       toggleCamBtn.textContent = 'หยุดกล้อง';
       startScanLoop();
     } catch (err) {
@@ -300,10 +304,52 @@ function stopCamera() {
   isCameraActive = false;
   video.classList.add('hidden');
   roiOverlay.classList.add('hidden');
-  cameraPlaceholder.classList.remove('hidden');
-  toggleCamBtn.className = 'flex-1 min-w-[140px] py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition';
+  if (!latestStillDataUrl) {
+    cameraPlaceholder.classList.remove('hidden');
+  }
+  toggleCamBtn.className = 'py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs sm:text-sm transition';
   toggleCamBtn.textContent = 'เปิดกล้องสแกน';
 }
+
+function showStillImage(dataUrl) {
+  latestStillDataUrl = dataUrl;
+  capturedPreviewImg.src = dataUrl;
+  capturedPreviewImg.classList.remove('hidden');
+  cameraPlaceholder.classList.add('hidden');
+}
+
+async function processImageElement(imgEl, fullMode = true) {
+  preprocessToCanvas(imgEl, fullMode);
+  if (isOcrReady) {
+    showToast('กำลังอ่านค่าหน่วยไฟจากภาพ...', '🔍');
+    await runOcr(true);
+  } else {
+    showToast('เตรียมภาพเรียบร้อย พิมพ์ค่าหน่วยไฟได้เลย', '🖼️');
+  }
+}
+
+snapPhotoBtn.addEventListener('click', async () => {
+  if (!isCameraActive || !video.videoWidth || !video.videoHeight) {
+    showToast('เปิดกล้องก่อน แล้วกด "ถ่ายภาพ" ได้เลยครับ', '📷');
+    return;
+  }
+
+  const snapCanvas = document.createElement('canvas');
+  snapCanvas.width = video.videoWidth;
+  snapCanvas.height = video.videoHeight;
+  snapCanvas.getContext('2d').drawImage(video, 0, 0);
+  const stillDataUrl = snapCanvas.toDataURL('image/jpeg', 0.8);
+
+  stopCamera();
+  showStillImage(stillDataUrl);
+
+  const img = new Image();
+  img.onload = async () => {
+    await processImageElement(img, true);
+  };
+  img.src = stillDataUrl;
+  showToast('ถ่ายภาพหน้าจอมิเตอร์แล้ว', '📸');
+});
 
 function preprocessToCanvas(srcEl, fullMode = false) {
   const w = srcEl.videoWidth || srcEl.naturalWidth || srcEl.width;
@@ -395,15 +441,16 @@ uploadBtn.addEventListener('click', () => imageUpload.click());
 imageUpload.addEventListener('change', (e) => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
+  stopCamera();
   const reader = new FileReader();
   reader.onload = (ev) => {
+    const dataUrl = ev.target.result;
+    showStillImage(dataUrl);
     const img = new Image();
     img.onload = async () => {
-      preprocessToCanvas(img, true);
-      if (isOcrReady) await runOcr(true);
-      else showToast('แนบรูปแล้ว พิมพ์ค่าหน่วยไฟได้เลย', '🖼️');
+      await processImageElement(img, true);
     };
-    img.src = ev.target.result;
+    img.src = dataUrl;
   };
   reader.readAsDataURL(file);
   e.target.value = '';
@@ -418,6 +465,10 @@ function capturePhoto(maxWidth = 480, quality = 0.55) {
     src = video;
     w = video.videoWidth;
     h = video.videoHeight;
+  } else if (latestStillDataUrl && capturedPreviewImg.naturalWidth && capturedPreviewImg.naturalHeight) {
+    src = capturedPreviewImg;
+    w = capturedPreviewImg.naturalWidth;
+    h = capturedPreviewImg.naturalHeight;
   } else if (processedCanvas.width && processedCanvas.height) {
     src = processedCanvas;
     w = processedCanvas.width;
