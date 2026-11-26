@@ -84,7 +84,7 @@ const STORAGE_RECORDS = 'kwh_simple_photo_records_v1';
 const STORAGE_WEBHOOK = 'kwh_simple_webhook_v1';
 const STORAGE_METER = 'kwh_simple_meter_v1';
 const DEFAULT_METER = 'SWG-F07-DPM75';
-const DEFAULT_WEBHOOK = 'https://script.google.com/macros/s/วางรหัส_DEPLOYMENT_ของคุณตรงนี้/exec';
+const DEFAULT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxbNfCJa3FJqyGzxShfVD0kOQ8YXJC9A2eJinpYsQcW4dXHSzt84cGzR4HJzWYpnngWwA/exec';
 
 let records = [];
 try {
@@ -92,16 +92,28 @@ try {
   if (Array.isArray(raw)) records = raw;
 } catch (_) {}
 
-const resolvedWebhook = (DEFAULT_WEBHOOK && !DEFAULT_WEBHOOK.includes('วางรหัส_DEPLOYMENT_ของคุณตรงนี้'))
-  ? DEFAULT_WEBHOOK.trim()
-  : (localStorage.getItem(STORAGE_WEBHOOK) || '').trim();
-
-if (resolvedWebhook) {
-  sheetWebhookUrl.value = resolvedWebhook;
-  localStorage.setItem(STORAGE_WEBHOOK, resolvedWebhook);
-  sheetStatusText.textContent = 'พร้อมส่งเข้าชีต';
-  sheetStatusText.className = 'text-[11px] text-emerald-600 font-medium';
+function getActiveWebhookUrl() {
+  const stored = (localStorage.getItem(STORAGE_WEBHOOK) || '').trim();
+  const fallback = (DEFAULT_WEBHOOK || '').trim();
+  return stored || fallback;
 }
+
+function applyWebhookState(url) {
+  const clean = (url || '').trim();
+  if (clean) {
+    sheetWebhookUrl.value = clean;
+    localStorage.setItem(STORAGE_WEBHOOK, clean);
+    sheetStatusText.textContent = 'พร้อมส่งเข้าชีต';
+    sheetStatusText.className = 'text-[11px] text-emerald-600 font-medium';
+  } else {
+    sheetWebhookUrl.value = '';
+    localStorage.removeItem(STORAGE_WEBHOOK);
+    sheetStatusText.textContent = 'ไม่ได้ตั้งค่าลิงก์';
+    sheetStatusText.className = 'text-[11px] text-slate-400';
+  }
+}
+
+applyWebhookState(getActiveWebhookUrl());
 
 const savedMeter = localStorage.getItem(STORAGE_METER) || DEFAULT_METER;
 if (savedMeter) {
@@ -584,15 +596,11 @@ function saveRecordsLocal() {
 
 saveWebhookBtn.addEventListener('click', () => {
   const url = sheetWebhookUrl.value.trim();
-  localStorage.setItem(STORAGE_WEBHOOK, url);
+  applyWebhookState(url);
   remoteRowsCache = null;
   if (url) {
-    sheetStatusText.textContent = 'พร้อมส่งเข้าชีต';
-    sheetStatusText.className = 'text-[11px] text-emerald-600 font-medium';
     showToast('บันทึกลิงก์แล้ว', '🔗');
   } else {
-    sheetStatusText.textContent = 'ไม่ได้ตั้งค่าลิงก์';
-    sheetStatusText.className = 'text-[11px] text-slate-400';
     showToast('ล้างลิงก์แล้ว', '🗑️');
   }
 });
@@ -639,7 +647,7 @@ saveBtn.addEventListener('click', async () => {
   renderList();
   refreshLiveQuality();
 
-  const url = (localStorage.getItem(STORAGE_WEBHOOK) || '').trim();
+  const url = getActiveWebhookUrl();
   if (url) {
     try {
       await fetch(url, {
@@ -785,7 +793,7 @@ function computeLinearTrend(values) {
 }
 
 async function loadDashboardRows(force = false) {
-  const url = (localStorage.getItem(STORAGE_WEBHOOK) || '').trim();
+  const url = getActiveWebhookUrl();
   if (!url) {
     dashSourceLabel.textContent = 'แสดงข้อมูลในเครื่องนี้ (ยังไม่ได้ตั้งค่าลิงก์ Google Apps Script)';
     return [...records].reverse().map(r => ({
